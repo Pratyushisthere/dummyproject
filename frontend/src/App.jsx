@@ -24,9 +24,18 @@ const App = () => {
   const fetchSeats = async () => {
     try {
       const res = await axios.get('http://127.0.0.1:8000/seats');
-      setSeats(res.data);
+      
+      // --- THE FIX: Normalize _id to id ---
+      const normalizedSeats = res.data.map(seat => ({
+        ...seat,
+        id: seat.id || seat._id // Use existing id, or fallback to _id
+      }));
+      
+      setSeats(normalizedSeats);
+
+      // Keep selection in sync
       if (selectedSeat) {
-        const updatedSeat = res.data.find(s => s.id === selectedSeat.id);
+        const updatedSeat = normalizedSeats.find(s => s.id === selectedSeat.id);
         if (updatedSeat) setSelectedSeat(updatedSeat);
       }
     } catch (err) { console.error(err); }
