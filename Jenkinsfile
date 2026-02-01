@@ -65,12 +65,21 @@ pipeline {
                 sh """
                     cd ${WORKSPACE}
                     podman-compose down || true
+                    
+                    # Remove old images to force fresh pull
+                    podman rmi blu-reserve-backend:latest || true
+                    podman rmi blu-reserve-frontend:latest || true
+                    
+                    # Rebuild without cache
+                    podman-compose build --no-cache
                     podman-compose up -d
+                    
                     sleep 10
                     echo "✅ Deployment complete"
                 """
             }
         }
+
         
         stage('Health Check') {
             steps {
