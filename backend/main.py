@@ -1,70 +1,36 @@
-from fastapi import FastAPI, HTTPException, Depends, status
+from dotenv import load_dotenv
+import os
+load_dotenv()
+
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from motor.motor_asyncio import AsyncIOMotorClient
-from jose import jwt
-import requests
-import os
-from dotenv import load_dotenv
+from auth import router as auth_router, get_current_user
 
-# ----------------- ENV -----------------
-load_dotenv()
-JWKS_URL = os.getenv("JWKS_URL")          # IBM JWKS URL
-ISSUER = os.getenv("JWT_ISSUER")          # IBM JWT issuer
-MONGO_URL = os.getenv("MONGO_URL")        # MongoDB connection string
+# ---------------- ENV ----------------
+MONGO_URL = os.getenv("MONGO_URL")
 
-if not JWKS_URL or not ISSUER or not MONGO_URL:
-    raise RuntimeError("JWKS_URL, JWT_ISSUER, and MONGO_URL must be set")
-
-# ----------------- SECURITY -----------------
-security = HTTPBearer()
-
-def get_jwks():
-    try:
-        return requests.get(JWKS_URL, timeout=5).json()
-    except Exception:
-        raise HTTPException(status_code=503, detail="Unable to fetch JWKS")
-
-def verify_jwt(token: str):
-    header = jwt.get_unverified_header(token)
-    kid = header.get("kid")
-    jwks = get_jwks()
-    key = next((k for k in jwks["keys"] if k["kid"] == kid), None)
-    if not key:
-        raise HTTPException(status_code=401, detail="Invalid token key")
-    
-    return jwt.decode(token, key, algorithms=["RS256"], issuer=ISSUER)
-
-def get_current_user(creds: HTTPAuthorizationCredentials = Depends(security)):
-    try:
-        payload = verify_jwt(creds.credentials)
-        return {
-            "w3_id": payload["sub"],
-            "name": payload.get("name"),
-            "email": payload.get("email"),
-        }
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid or expired W3ID token")
-
-# ----------------- DATABASE -----------------
+# ---------------- DB ----------------
 client = AsyncIOMotorClient(MONGO_URL)
-db = client.get_database("office_booking_db")
+db = client.office_booking_db
 seats_collection = db.seats
 employees_collection = db.employees
 
-# ----------------- FASTAPI APP -----------------
+# ---------------- APP ----------------
 app = FastAPI()
+app.include_router(auth_router)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # For testing; lock this to your frontend URL in prod
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ----------------- MODELS -----------------
+# ---------------- MODELS ----------------
 class BookingRequest(BaseModel):
     seat_id: int
     name: str
@@ -80,60 +46,43 @@ class Seat(BaseModel):
     class Config:
         populate_by_name = True
 
-# ----------------- STARTUP EVENT -----------------
+# ---------------- STARTUP ----------------
 @app.on_event("startup")
-async def seed_database():
-    count = await seats_collection.count_documents({})
-    if count == 0:
-        seat_data = [{"_id": i, "status": "available", "price": 5, "booked_by": None} for i in range(1, 101)]
-        await seats_collection.insert_many(seat_data)
-        print("Database seeded with 100 seats")
+async def seed():
+    if await seats_collection.count_documents({}) == 0:
+        await seats_collection.insert_many(
+            [{"_id": i, "status": "available", "price": 5} for i in range(1, 101)]
+        )
 
-# ----------------- ROUTES -----------------
+# ---------------- ROUTES ----------------
 @app.get("/seats", response_model=List[Seat])
 async def get_seats(user=Depends(get_current_user)):
-    return await seats_collection.find().sort("_id", 1).to_list(1000)
+    return await seats_collection.find().to_list(1000)
 
 @app.post("/book")
-async def book_seat(booking: BookingRequest, user=Depends(get_current_user)):
+async def book(booking: BookingRequest, user=Depends(get_current_user)):
     w3_id = user["w3_id"]
     seat = await seats_collection.find_one({"_id": booking.seat_id})
-    if not seat:
-        raise HTTPException(status_code=404, detail="Seat not found")
-    if seat["status"] == "occupied":
-        raise HTTPException(status_code=400, detail="Seat already occupied")
+    if not seat or seat["status"] == "occupied":
+        raise HTTPException(status_code=400, detail="Seat unavailable")
 
     await seats_collection.update_one(
         {"_id": booking.seat_id},
-        {"$set": {
-            "status": "occupied",
-            "booked_by": w3_id,
-            "booking_details": {
-                "name": booking.name,
-                "date": booking.date,
-                "time": booking.time_slot,
-            }
-        }}
+        {"$set": {"status": "occupied", "booked_by": w3_id}},
     )
 
     await employees_collection.update_one(
         {"w3_id": w3_id},
-        {"$set": {"name": booking.name}, "$addToSet": {"booked_seats": booking.seat_id}},
-        upsert=True
+        {"$addToSet": {"booked_seats": booking.seat_id}},
+        upsert=True,
     )
 
-    updated_seat = await seats_collection.find_one({"_id": booking.seat_id})
-    return {"message": f"Seat {booking.seat_id} booked. 5 Blu Dollars charged.", "seat": updated_seat}
+    return {"message": "Seat booked"}
 
 @app.post("/release/{seat_id}")
-async def release_seat(seat_id: int, user=Depends(get_current_user)):
-    seat = await seats_collection.find_one({"_id": seat_id})
-    if not seat:
-        raise HTTPException(status_code=404, detail="Seat not found")
-
+async def release(seat_id: int, user=Depends(get_current_user)):
     await seats_collection.update_one(
         {"_id": seat_id},
-        {"$set": {"status": "available", "booked_by": None, "booking_details": None}}
+        {"$set": {"status": "available", "booked_by": None}},
     )
-    updated_seat = await seats_collection.find_one({"_id": seat_id})
-    return {"message": f"Seat {seat_id} released successfully.", "seat": updated_seat}
+    return {"message": "Seat released"}
