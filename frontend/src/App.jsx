@@ -133,7 +133,7 @@ const App = () => {
     return (
       <div className="min-h-screen bg-stone-100 flex items-center justify-center p-4">
         <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border border-stone-200">
-          <h1 className="text-3xl font-serif font-bold text-[#4A403A] text-center mb-2">Blu-Reserve</h1>
+          <h1 className="text-3xl font-serif font-bold text-[#4A403A] text-center mb-2">Blu-Reserve This-is-for-testing</h1>
           <p className="text-stone-500 mb-8 text-sm text-center">Workplace Capacity Management</p>
           <input type="email" placeholder="w3 ID (e.g. user@in.ibm.com)" className="w-full p-4 border border-stone-200 rounded-xl mb-4 bg-stone-50 text-stone-900 focus:ring-2 focus:ring-[#4A403A] outline-none" value={w3Id} onChange={(e) => setW3Id(e.target.value)} />
           <button onClick={handleLogin} className="w-full bg-[#4A403A] text-white py-4 rounded-xl font-bold shadow-lg hover:bg-[#38302C] transition-all">Sign In with w3</button>
