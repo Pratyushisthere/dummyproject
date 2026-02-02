@@ -96,14 +96,19 @@ async def book_seat(payload: BookingRequest, user=Depends(get_current_user)):
             detail="You already have an active booking. Release it first.",
         )
 
-    # cooldown check
-    if employee and employee.get("last_booking_at"):
+    # cooldown check ONLY if user still has a seat
+    if (
+        employee
+        and employee.get("last_booked_seat")
+        and employee.get("last_booking_at")
+    ):
         last = employee["last_booking_at"]
         if datetime.utcnow() - last < BOOKING_COOLDOWN:
             raise HTTPException(
                 status_code=400,
                 detail="You can book only once every 45 minutes.",
             )
+
 
     seat = await seats_collection.find_one({"_id": payload.seat_id})
     if not seat or seat["status"] == "occupied":
@@ -159,13 +164,17 @@ async def release_seat(seat_id: int, user=Depends(get_current_user)):
 
     # update employee (refund blue tokens + clear booking)
     await employees_collection.update_one(
-        {"w3_id": user["w3_id"]},
-        {
-            "$inc": {"blue_tokens_spent": -SEAT_COST},
-            "$pull": {"booked_seats": seat_id},
-            "$set": {"last_booked_seat": None},
+    {"w3_id": user["w3_id"]},
+    {
+        "$inc": {"blue_tokens_spent": -SEAT_COST},
+        "$pull": {"booked_seats": seat_id},
+        "$set": {
+            "last_booked_seat": None,
+            "last_booking_at": None,  # 👈 reset cooldown
         },
-    )
+    },
+)
+
 
     return {
         "message": "Seat released",
