@@ -8,7 +8,11 @@ def employee_document(claims: dict):
         "full_name": claims.get("name"),
         "manager": claims.get("manager"),
         "department": claims.get("department"),
-        "first_login_at": datetime.utcnow(),
-        "last_login_at": datetime.utcnow(),
+
+        # NEW (booking-focused)
+        "last_booking_at": None,
+        "last_booked_seat": None,
+        "blue_tokens_spent": 0, 
+
         "booked_seats": [],
     }

@@ -8,6 +8,10 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field
 from typing import Optional, List
 import os
+from datetime import datetime, timedelta
+
+BOOKING_COOLDOWN = timedelta(minutes=45)
+SEAT_COST = 5
 
 from auth import router as auth_router, get_current_user
 
@@ -67,32 +71,105 @@ async def seed():
         )
 
 # ROUTES
+
+@app.get("/me")
+async def me(user=Depends(get_current_user)):
+    return {
+        "w3_id": user["w3_id"],
+        "name": user.get("name"),
+        "email": user.get("email"),
+    }
+
+
 @app.get("/seats", response_model=List[Seat])
 async def get_seats(user=Depends(get_current_user)):
     return await seats_collection.find().to_list(1000)
 
 @app.post("/book")
 async def book_seat(payload: BookingRequest, user=Depends(get_current_user)):
+    employee = await employees_collection.find_one({"w3_id": user["w3_id"]})
+
+    # already has an active seat
+    if employee and employee.get("last_booked_seat"):
+        raise HTTPException(
+            status_code=400,
+            detail="You already have an active booking. Release it first.",
+        )
+
+    # cooldown check
+    if employee and employee.get("last_booking_at"):
+        last = employee["last_booking_at"]
+        if datetime.utcnow() - last < BOOKING_COOLDOWN:
+            raise HTTPException(
+                status_code=400,
+                detail="You can book only once every 45 minutes.",
+            )
+
     seat = await seats_collection.find_one({"_id": payload.seat_id})
     if not seat or seat["status"] == "occupied":
-        raise HTTPException(400, "Seat unavailable")
+        raise HTTPException(status_code=400, detail="Seat unavailable")
 
+    # update seat
     await seats_collection.update_one(
         {"_id": payload.seat_id},
-        {"$set": {"status": "occupied", "booked_by": user["w3_id"]}},
+        {
+            "$set": {
+                "status": "occupied",
+                "booked_by": user["w3_id"],
+                "booking_time": datetime.utcnow(),
+            }
+        },
     )
 
+    # update employee (INCLUDING blue tokens)
     await employees_collection.update_one(
         {"w3_id": user["w3_id"]},
-        {"$addToSet": {"booked_seats": payload.seat_id}},
+        {
+            "$addToSet": {"booked_seats": payload.seat_id},
+            "$inc": {"blue_tokens_spent": SEAT_COST},
+            "$set": {
+                "last_booking_at": datetime.utcnow(),
+                "last_booked_seat": payload.seat_id,
+            },
+        },
+        upsert=True,
     )
 
     return {"message": "Seat booked"}
 
 @app.post("/release/{seat_id}")
 async def release_seat(seat_id: int, user=Depends(get_current_user)):
+    seat = await seats_collection.find_one({"_id": seat_id})
+
+    # seat not owned by user
+    if not seat or seat.get("booked_by") != user["w3_id"]:
+        raise HTTPException(status_code=403, detail="Not allowed")
+
+    # release the seat
     await seats_collection.update_one(
         {"_id": seat_id},
-        {"$set": {"status": "available", "booked_by": None}},
+        {
+            "$set": {
+                "status": "available",
+                "booked_by": None,
+                "booking_time": None,
+            }
+        },
     )
-    return {"message": "Seat released"}
+
+    # update employee (refund blue tokens + clear booking)
+    await employees_collection.update_one(
+        {"w3_id": user["w3_id"]},
+        {
+            "$inc": {"blue_tokens_spent": -SEAT_COST},
+            "$pull": {"booked_seats": seat_id},
+            "$set": {"last_booked_seat": None},
+        },
+    )
+
+    return {
+        "message": "Seat released",
+        "tokens_refunded": SEAT_COST,
+    }
+
+

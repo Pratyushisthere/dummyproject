@@ -8,12 +8,21 @@ const App = () => {
   const [notification, setNotification] = useState(null);
   const [selectedDate, setSelectedDate] = useState("Today");
   const [selectedTime, setSelectedTime] = useState("12:00 PM");
+  const [me, setMe] = useState(null);
 
   // --- Axios instance (cookie-based auth) ---
   const api = axios.create({
     baseURL: "http://127.0.0.1:8000",
     withCredentials: true,
   });
+
+  useEffect(() => {
+    api
+      .get("/me")
+      .then((res) => setMe(res.data))
+      .catch(() => setMe(null));
+  }, []);
+
 
   // --- Fetch seats periodically ---
   useEffect(() => {
@@ -150,9 +159,6 @@ const App = () => {
     </div>
   );
 
-  /* =========================
-     DASHBOARD UI (ONLY CHANGE)
-  ========================= */
   return (
     <div className="min-h-screen bg-stone-100 text-stone-800 p-4 md:p-8">
       <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -219,7 +225,7 @@ const App = () => {
           </div>
         </div>
 
-        {/* Right Panel */}
+        {/* Right Panel (UPDATED) */}
         <div className="lg:col-span-3 bg-white rounded-3xl p-6 shadow-xl">
           <h2 className="font-serif font-bold text-lg mb-4">
             Booking Summary
@@ -227,7 +233,9 @@ const App = () => {
 
           {selectedSeat ? (
             <>
-              <p className="text-4xl font-bold mb-4">{selectedSeat.id}</p>
+              <p className="text-4xl font-bold mb-4">
+                {selectedSeat.id}
+              </p>
 
               {selectedSeat.status === "occupied" && (
                 <p className="text-red-500 text-sm mb-4">
@@ -235,24 +243,36 @@ const App = () => {
                 </p>
               )}
 
-              {selectedSeat.status === "available" ? (
+              {selectedSeat.status === "available" && (
                 <button
                   onClick={handleBooking}
                   className="w-full bg-[#4A403A] text-white py-3 rounded-xl font-bold"
                 >
                   Confirm Booking
                 </button>
-              ) : (
-                <button
-                  onClick={handleCheckout}
-                  className="w-full bg-red-500 text-white py-3 rounded-xl font-bold"
-                >
-                  Release Seat
-                </button>
               )}
+
+              {selectedSeat.status === "occupied" &&
+                selectedSeat.booked_by === me?.w3_id && (
+                  <button
+                    onClick={handleCheckout}
+                    className="w-full bg-red-500 text-white py-3 rounded-xl font-bold"
+                  >
+                    Release Seat
+                  </button>
+                )}
+
+              {selectedSeat.status === "occupied" &&
+                selectedSeat.booked_by !== me?.w3_id && (
+                  <p className="text-stone-400 text-sm italic">
+                    This seat is booked by another employee
+                  </p>
+                )}
             </>
           ) : (
-            <p className="text-stone-400 italic">Select a seat</p>
+            <p className="text-stone-400 italic">
+              Select a seat
+            </p>
           )}
         </div>
       </div>
