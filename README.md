@@ -95,6 +95,79 @@ npm run dev
 * Click the **"Smart Assign"** button on the map.
 * The system will randomly select an open seat for you.
 
+## 🧪 MONGODB COMMANDS
+
+Here are the installation and verification commands formatted clearly for you to run in your Terminal.
+
+### **Step 1: Install MongoDB on macOS**
+
+We will use Homebrew, the standard package manager for macOS.
+
+1. **Tap the MongoDB library:**
+```bash
+brew tap mongodb/brew
+
+```
+
+
+2. **Install MongoDB Community Edition:**
+```bash
+brew install mongodb-community
+
+```
+
+
+3. **Start MongoDB as a service:**
+```bash
+brew services start mongodb-community
+
+```
+
+
+4. **Verify it's running:**
+You can check if the database is active by typing `mongosh` in your terminal.
+* If it connects to a shell prompt (`test>`), you are good to go.
+* Type `exit` to leave.
+
+
+
+---
+
+### **Step 2: Check Data using `mongosh` (The Terminal Way)**
+
+This is the quickest way to view your data because it lives inside your Terminal.
+
+1. **Open a new tab** in your terminal (press `Cmd + T`).
+2. **Enter the Mongo Shell:**
+```bash
+mongosh
+
+```
+
+
+*(If your terminal says "command not found", run: `brew install mongosh`)*
+3. **Select your database:**
+Once you see the prompt (e.g., `test>`), type:
+```javascript
+use office_booking_db
+
+```
+
+
+4. **View your seats data:**
+```javascript
+db.seats.find()
+
+```
+
+
+5. **View your employees data:**
+```javascript
+db.employees.find()
+
+```
+
+
 
 
 ---
